@@ -7,11 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
+# Install system dependencies (minimal)
 RUN apt-get update && apt-get install -y \
     gcc \
-    g++ \
-    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
@@ -31,13 +29,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app"
 
-# Create non-root user
-RUN groupadd -r avenai && useradd -r -g avenai avenai
-
-# Install runtime dependencies
+# Install runtime dependencies (minimal)
 RUN apt-get update && apt-get install -y \
     libpq5 \
-    curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -50,21 +44,16 @@ WORKDIR /app
 # Copy application code
 COPY avenai_final.py .
 COPY config/ ./config/
-COPY uploads/ ./uploads/
 
 # Create necessary directories
-RUN mkdir -p /app/logs /app/uploads && \
-    chown -R avenai:avenai /app
-
-# Switch to non-root user
-USER avenai
+RUN mkdir -p /app/logs /app/uploads
 
 # Expose port
 EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
 
 # Run the application
 CMD ["python", "avenai_final.py"]
