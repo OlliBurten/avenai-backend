@@ -37,6 +37,9 @@ WORKDIR /app
 
 # Copy application code
 COPY avenai_final.py .
+COPY database.py .
+COPY models.py .
+COPY auth_utils.py .
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/uploads
