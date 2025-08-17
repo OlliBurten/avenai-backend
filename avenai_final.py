@@ -1450,15 +1450,15 @@ async def register(
         email = body.get("email")
         password = body.get("password")
         
-        # Validate required fields
-        if not all([company_name, company_description, email, password]):
-            raise HTTPException(status_code=422, detail="All fields are required")
+        # Validate required fields (company_description is optional)
+        if not all([company_name, email, password]):
+            raise HTTPException(status_code=422, detail="Company name, email, and password are required")
         
         print("✅ All required fields present")
         
         # Sanitize inputs
         sanitized_company_name = sanitize_input(company_name, 100)
-        sanitized_company_description = sanitize_input(company_description, 500)
+        sanitized_company_description = sanitize_input(company_description or "", 500)  # Handle empty description
         sanitized_email = sanitize_input(email, 100)
         sanitized_password = sanitize_input(password, 100)
         
