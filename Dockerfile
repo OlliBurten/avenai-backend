@@ -29,12 +29,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app"
 
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
 # Create app directory
 WORKDIR /app
 
 # Copy application code
 COPY avenai_final.py .
-COPY config.env .
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/uploads
