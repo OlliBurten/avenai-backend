@@ -179,7 +179,7 @@ def sanitize_input(text: str, max_length: int = 1000) -> str:
 # DATA MODELS
 # ============================================================================
 
-class User(BaseModel):
+class UserProfile(BaseModel):
     id: str
     email: str
     name: str
