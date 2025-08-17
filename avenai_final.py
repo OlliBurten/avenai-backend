@@ -1478,6 +1478,71 @@ async def logout():
     """Logout endpoint"""
     return {"message": "Logged out successfully"}
 
+@app.post("/api/documents/upload")
+async def upload_document_frontend(
+    request: Request,
+    file: UploadFile = File(...),
+    _: bool = Depends(rate_limit_dependency)
+):
+    """Upload document - Frontend endpoint"""
+    try:
+        # Validate file
+        validate_file_upload(file)
+        
+        # Get user info from request (we'll get this from JWT later)
+        # For now, use mock values
+        company_id = "company_001"  # Will come from JWT
+        uploaded_by = "user_001"    # Will come from JWT
+        
+        file_content = await file.read()
+        doc_id = create_id("doc")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_filename = f"{timestamp}_{file.filename.replace(' ', '_')}"
+        file_path = UPLOADS_DIR / safe_filename
+        
+        # Save file
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        
+        # Process content (simplified for now)
+        content_text = f"Document: {file.filename}"  # Will be enhanced with AI processing later
+        
+        document = Document(
+            id=doc_id,
+            filename=safe_filename,
+            original_filename=file.filename,
+            file_size=len(file_content),
+            mime_type=file.content_type or "application/octet-stream",
+            status="completed",
+            content_summary=content_text,
+            uploaded_by=uploaded_by,
+            company_id=company_id,
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat()
+        )
+        
+        MOCK_DOCUMENTS[doc_id] = document.dict()
+        
+        # Track document upload
+        track_document_usage(doc_id, "upload", uploaded_by)
+        track_user_activity(uploaded_by, "document_upload", {
+            "document_id": doc_id,
+            "filename": file.filename,
+            "file_size": len(file_content)
+        })
+        
+        return {
+            "success": True,
+            "message": "Document uploaded successfully",
+            "document": document.dict()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Upload error: {e}")
+        raise HTTPException(status_code=500, detail="Upload failed: Internal server error")
+
 @app.post("/api/v1/documents/upload")
 async def upload_document(
     request: Request,
@@ -1534,6 +1599,25 @@ async def upload_document(
         error_msg = "Upload failed" if os.getenv("DEBUG", "False").lower() == "true" else "Upload failed: Internal server error"
         raise HTTPException(status_code=500, detail=error_msg)
 
+@app.get("/api/documents")
+async def list_documents_frontend():
+    """List documents - Frontend endpoint"""
+    try:
+        # For now, return all documents (will filter by company later)
+        docs = list(MOCK_DOCUMENTS.values())
+        
+        # Sort by creation date (newest first)
+        docs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        
+        return {
+            "success": True,
+            "documents": docs,
+            "total": len(docs)
+        }
+    except Exception as e:
+        print(f"List documents error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list documents")
+
 @app.get("/api/v1/documents")
 @app.get("/api/v1/documents/")
 async def list_documents(
@@ -1566,6 +1650,31 @@ async def list_documents(
     
     print(f"✅ Returning {len(paginated_docs)} documents")
     return result
+
+@app.delete("/api/documents/{document_id}")
+async def delete_document_frontend(document_id: str):
+    """Delete a document - Frontend endpoint"""
+    try:
+        if document_id not in MOCK_DOCUMENTS:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Get document info before deletion
+        document = MOCK_DOCUMENTS[document_id]
+        
+        # Remove the document
+        del MOCK_DOCUMENTS[document_id]
+        
+        # TODO: Also remove the actual file from storage
+        
+        return {
+            "success": True,
+            "message": "Document deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete document error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete document")
 
 @app.delete("/api/v1/documents/{document_id}")
 async def delete_document(document_id: str):
