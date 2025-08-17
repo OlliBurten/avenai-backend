@@ -25,6 +25,12 @@ from collections import defaultdict
 import uuid
 import asyncio
 
+# Database imports
+from database import get_db, SessionLocal
+from models import Company, User, Document, ChatSession, ChatMessage
+from auth_utils import get_password_hash, verify_password, create_access_token, verify_token
+from sqlalchemy.orm import Session
+
 # Load environment variables from config.env with higher priority
 from dotenv import load_dotenv
 load_dotenv('config.env', override=True)
@@ -1038,6 +1044,18 @@ app.add_middleware(
     max_age=3600,  # Cache preflight for 1 hour
 )
 
+# Database initialization
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    try:
+        from database import engine, Base
+        Base.metadata.create_all(bind=engine)
+        print("✅ Database tables created/verified successfully")
+    except Exception as e:
+        print(f"❌ Database initialization failed: {e}")
+        print("⚠️  Continuing without database (some features may not work)")
+
 # Enhanced Multi-Tenant Architecture
 class TenantConfig(BaseModel):
     """Enterprise tenant configuration"""
@@ -1335,9 +1353,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.post("/auth/login")
 async def login(
     request: Request,
+    db: Session = Depends(get_db),
     _: bool = Depends(rate_limit_dependency)
 ):
-    """Login endpoint - accepts both JSON and form data"""
+    """Login endpoint with real database authentication"""
     try:
         # Get JSON data
         body = await request.json()
@@ -1356,15 +1375,23 @@ async def login(
         if '@' not in sanitized_email:
             raise HTTPException(status_code=422, detail="Invalid email format")
         
-        # For now, accept any valid email/password combination
-        # In production, you'd validate against a database
+        # Find user in database
+        user = db.query(User).filter(User.email == sanitized_email).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
         
-        # Generate user ID and token
-        user_id = f"user_{uuid.uuid4().hex[:8]}"
-        token = f"avenai_jwt_{user_id}"
+        # Verify password
+        if not verify_password(sanitized_password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        # Get company information
+        company = db.query(Company).filter(Company.id == user.company_id).first()
+        
+        # Create JWT token
+        token = create_access_token(data={"sub": user.id, "email": user.email})
         
         # Track successful login
-        track_user_activity(user_id, "login_success", {
+        track_user_activity(user.id, "login_success", {
             "email": sanitized_email,
             "timestamp": datetime.now().isoformat()
         })
@@ -1373,8 +1400,11 @@ async def login(
             "success": True,
             "message": "Login successful",
             "user": {
-                "id": user_id,
-                "email": sanitized_email,
+                "id": user.id,
+                "email": user.email,
+                "company_name": company.name if company else "Unknown Company",
+                "company_description": company.description if company else "",
+                "created_at": user.created_at.isoformat(),
                 "token": token
             }
         }
@@ -1387,9 +1417,10 @@ async def login(
 @app.post("/auth/register")
 async def register(
     request: Request,
+    db: Session = Depends(get_db),
     _: bool = Depends(rate_limit_dependency)
 ):
-    """User registration endpoint"""
+    """User registration endpoint with real database"""
     try:
         # Get JSON data
         body = await request.json()
@@ -1416,22 +1447,37 @@ async def register(
         if len(sanitized_password) < 8:
             raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
         
-        # Generate user ID and token
-        user_id = f"user_{uuid.uuid4().hex[:8]}"
-        token = f"avenai_jwt_{user_id}"
+        # Check if email already exists
+        existing_user = db.query(User).filter(User.email == sanitized_email).first()
+        if existing_user:
+            raise HTTPException(status_code=409, detail="Email already registered")
         
-        # Create user object
-        user = {
-            "id": user_id,
-            "company_name": sanitized_company_name,
-            "company_description": sanitized_company_description,
-            "email": sanitized_email,
-            "token": token,
-            "created_at": datetime.now().isoformat()
-        }
+        # Create company first
+        company = Company(
+            name=sanitized_company_name,
+            description=sanitized_company_description
+        )
+        db.add(company)
+        db.flush()  # Get the company ID
+        
+        # Hash password and create user
+        password_hash = get_password_hash(sanitized_password)
+        user = User(
+            email=sanitized_email,
+            password_hash=password_hash,
+            company_id=company.id,
+            is_admin=True
+        )
+        db.add(user)
+        
+        # Commit to database
+        db.commit()
+        
+        # Create JWT token
+        token = create_access_token(data={"sub": user.id, "email": user.email})
         
         # Track successful registration
-        track_user_activity(user_id, "registration_success", {
+        track_user_activity(user.id, "registration_success", {
             "email": sanitized_email,
             "company": sanitized_company_name,
             "timestamp": datetime.now().isoformat()
@@ -1440,31 +1486,59 @@ async def register(
         return {
             "success": True,
             "message": "Registration successful",
-            "user": user
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "company_name": company.name,
+                "company_description": company.description,
+                "created_at": user.created_at.isoformat(),
+                "token": token
+            }
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 @app.get("/auth/me")
-async def get_current_user_route():
-    """Get current user - matches frontend expectation"""
+async def get_current_user_route(
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
+):
+    """Get current user from JWT token"""
     try:
-        # For now, return a mock user
-        # In production, you'd validate the JWT token and return the actual user
+        # Verify JWT token
+        payload = verify_token(credentials.credentials)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user from database
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get company information
+        company = db.query(Company).filter(Company.id == user.company_id).first()
+        
         return {
             "success": True,
             "user": {
-                "id": "user_001",
-                "email": "admin@avenai.com",
-                "companyName": "Avenai",
-                "companyDescription": "AI-powered API support platform",
-                "createdAt": datetime.now().isoformat(),
-                "token": "mock_jwt_token_12345"
+                "id": user.id,
+                "email": user.email,
+                "company_name": company.name if company else "Unknown Company",
+                "company_description": company.description if company else "",
+                "created_at": user.created_at.isoformat(),
+                "token": credentials.credentials
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get user: {str(e)}")
 
