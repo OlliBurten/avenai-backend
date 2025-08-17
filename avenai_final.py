@@ -1332,56 +1332,121 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 # API ENDPOINTS
 # ============================================================================
 
-@app.post("/api/v1/auth/login")
+@app.post("/auth/login")
 async def login(
     request: Request,
     _: bool = Depends(rate_limit_dependency)
 ):
     """Login endpoint - accepts both JSON and form data"""
     try:
-        # Try to get JSON data first
+        # Get JSON data
         body = await request.json()
         email = body.get("email")
         password = body.get("password")
-    except:
-        # Fallback to form data
-        form = await request.form()
-        email = form.get("email")
-        password = form.get("password")
-    
-    # Sanitize inputs
-    sanitized_email = sanitize_input(email, 100) if email else ""
-    sanitized_password = sanitize_input(password, 100) if password else ""
-    
-    if not sanitized_email or not sanitized_password:
-        raise HTTPException(status_code=422, detail="Email and password are required")
-    
-    # Validate email format
-    if '@' not in sanitized_email:
-        raise HTTPException(status_code=422, detail="Invalid email format")
-    
-    if sanitized_email == "admin@avenai.com" and sanitized_password == "password":
+        
+        # Validate required fields
+        if not email or not password:
+            raise HTTPException(status_code=422, detail="Email and password are required")
+        
+        # Sanitize inputs
+        sanitized_email = sanitize_input(email, 100)
+        sanitized_password = sanitize_input(password, 100)
+        
+        # Validate email format
+        if '@' not in sanitized_email:
+            raise HTTPException(status_code=422, detail="Invalid email format")
+        
+        # For now, accept any valid email/password combination
+        # In production, you'd validate against a database
+        
+        # Generate user ID and token
+        user_id = f"user_{uuid.uuid4().hex[:8]}"
+        token = f"avenai_jwt_{user_id}"
+        
         # Track successful login
-        track_user_activity("user_001", "login_success", {
+        track_user_activity(user_id, "login_success", {
             "email": sanitized_email,
             "timestamp": datetime.now().isoformat()
         })
         
         return {
-            "access_token": "mock_jwt_token_12345",
-            "token_type": "bearer",
-            "expires_in": 3600,
-            "user_id": "user_001",
-            "email": sanitized_email
+            "success": True,
+            "message": "Login successful",
+            "user": {
+                "id": user_id,
+                "email": sanitized_email,
+                "token": token
+            }
         }
-    
-    # Track failed login attempt
-    track_user_activity("unknown", "login_failed", {
-        "email": sanitized_email,
-        "timestamp": datetime.now().isoformat()
-    })
-    
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+@app.post("/auth/register")
+async def register(
+    request: Request,
+    _: bool = Depends(rate_limit_dependency)
+):
+    """User registration endpoint"""
+    try:
+        # Get JSON data
+        body = await request.json()
+        company_name = body.get("company_name")
+        company_description = body.get("company_description")
+        email = body.get("email")
+        password = body.get("password")
+        
+        # Validate required fields
+        if not all([company_name, company_description, email, password]):
+            raise HTTPException(status_code=422, detail="All fields are required")
+        
+        # Sanitize inputs
+        sanitized_company_name = sanitize_input(company_name, 100)
+        sanitized_company_description = sanitize_input(company_description, 500)
+        sanitized_email = sanitize_input(email, 100)
+        sanitized_password = sanitize_input(password, 100)
+        
+        # Validate email format
+        if '@' not in sanitized_email:
+            raise HTTPException(status_code=422, detail="Invalid email format")
+        
+        # Validate password length
+        if len(sanitized_password) < 8:
+            raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+        
+        # Generate user ID and token
+        user_id = f"user_{uuid.uuid4().hex[:8]}"
+        token = f"avenai_jwt_{user_id}"
+        
+        # Create user object
+        user = {
+            "id": user_id,
+            "company_name": sanitized_company_name,
+            "company_description": sanitized_company_description,
+            "email": sanitized_email,
+            "token": token,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        # Track successful registration
+        track_user_activity(user_id, "registration_success", {
+            "email": sanitized_email,
+            "company": sanitized_company_name,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        return {
+            "success": True,
+            "message": "Registration successful",
+            "user": user
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 @app.get("/api/v1/auth/me")
 async def get_current_user():
