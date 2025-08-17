@@ -1021,7 +1021,7 @@ CORS_OVERRIDE = os.getenv("CORS_OVERRIDE", "false").lower() == "true"
 if CORS_OVERRIDE:
     ALLOWED_ORIGINS = ["*"]  # Allow all origins for development
 else:
-    ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,https://avenai-diyql7fji-olliburtens-projects.vercel.app,https://avenai.vercel.app,https://avenai-black.vercel.app,https://*.vercel.app,https://*.railway.app").split(",")
+    ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,https://avenai-diyql7fji-olliburtens-projects.vercel.app,https://avenai.vercel.app,https://avenai-black.vercel.app,https://app.avenai.io,https://avenai.io,https://*.vercel.app,https://*.railway.app").split(",")
     ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
     
     # Fallback: If no origins specified, allow all (for development)
