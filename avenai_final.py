@@ -1018,7 +1018,7 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 app = FastAPI(
     title="Avenai AI Platform",
     description="AI-powered API integration support tool for SaaS companies",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 # Enhanced CORS configuration for production
@@ -1048,10 +1048,13 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
+    print("🚀 AVENAI BACKEND v2.1.0 STARTING UP!")
+    print("🔍 Checking database connection...")
     try:
         from database import engine, Base
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created/verified successfully")
+        print("🎉 AVENAI BACKEND v2.1.0 IS READY!")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
         print("⚠️  Continuing without database (some features may not work)")
