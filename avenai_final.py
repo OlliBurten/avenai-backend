@@ -25,7 +25,7 @@ from collections import defaultdict
 import uuid
 import asyncio
 
-# Database imports
+# Database imports - Updated for Railway deployment
 from database import get_db, SessionLocal
 from models import Company, User, Document, ChatSession, ChatMessage
 from auth_utils import get_password_hash, verify_password, create_access_token, verify_token
