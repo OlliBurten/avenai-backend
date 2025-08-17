@@ -1448,6 +1448,26 @@ async def register(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
+@app.get("/auth/me")
+async def get_current_user_route():
+    """Get current user - matches frontend expectation"""
+    try:
+        # For now, return a mock user
+        # In production, you'd validate the JWT token and return the actual user
+        return {
+            "success": True,
+            "user": {
+                "id": "user_001",
+                "email": "admin@avenai.com",
+                "companyName": "Avenai",
+                "companyDescription": "AI-powered API support platform",
+                "createdAt": datetime.now().isoformat(),
+                "token": "mock_jwt_token_12345"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get user: {str(e)}")
+
 @app.get("/api/v1/auth/me")
 async def get_current_user():
     """Get current user"""
