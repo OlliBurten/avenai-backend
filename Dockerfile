@@ -29,21 +29,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app"
 
-# Install runtime dependencies (minimal)
-RUN apt-get update && apt-get install -y \
-    libpq5 \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
-
 # Create app directory
 WORKDIR /app
 
 # Copy application code
 COPY avenai_final.py .
-COPY config/ ./config/
+COPY config.env .
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/uploads
