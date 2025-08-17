@@ -1425,8 +1425,12 @@ async def register(
 ):
     """User registration endpoint with real database"""
     try:
+        print("🔍 Starting registration process...")
+        
         # Get JSON data
         body = await request.json()
+        print(f"📝 Received registration data: {body}")
+        
         company_name = body.get("company_name")
         company_description = body.get("company_description")
         email = body.get("email")
@@ -1436,11 +1440,15 @@ async def register(
         if not all([company_name, company_description, email, password]):
             raise HTTPException(status_code=422, detail="All fields are required")
         
+        print("✅ All required fields present")
+        
         # Sanitize inputs
         sanitized_company_name = sanitize_input(company_name, 100)
         sanitized_company_description = sanitize_input(company_description, 500)
         sanitized_email = sanitize_input(email, 100)
         sanitized_password = sanitize_input(password, 100)
+        
+        print("🧹 Input sanitization complete")
         
         # Validate email format
         if '@' not in sanitized_email:
@@ -1450,20 +1458,28 @@ async def register(
         if len(sanitized_password) < 8:
             raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
         
+        print("✅ Email and password validation passed")
+        
         # Check if email already exists
+        print("🔍 Checking for existing user...")
         existing_user = db.query(User).filter(User.email == sanitized_email).first()
         if existing_user:
             raise HTTPException(status_code=409, detail="Email already registered")
         
+        print("✅ No existing user found")
+        
         # Create company first
+        print("🏢 Creating company...")
         company = Company(
             name=sanitized_company_name,
             description=sanitized_company_description
         )
         db.add(company)
         db.flush()  # Get the company ID
+        print(f"✅ Company created with ID: {company.id}")
         
         # Hash password and create user
+        print("👤 Creating user...")
         password_hash = get_password_hash(sanitized_password)
         user = User(
             email=sanitized_email,
@@ -1474,10 +1490,14 @@ async def register(
         db.add(user)
         
         # Commit to database
+        print("💾 Committing to database...")
         db.commit()
+        print(f"✅ User created with ID: {user.id}")
         
         # Create JWT token
+        print("🔑 Creating JWT token...")
         token = create_access_token(data={"sub": user.id, "email": user.email})
+        print("✅ JWT token created")
         
         # Track successful registration
         track_user_activity(user.id, "registration_success", {
@@ -1485,6 +1505,8 @@ async def register(
             "company": sanitized_company_name,
             "timestamp": datetime.now().isoformat()
         })
+        
+        print("🎉 Registration completed successfully!")
         
         return {
             "success": True,
@@ -1500,8 +1522,13 @@ async def register(
         }
         
     except HTTPException:
+        print("❌ HTTP Exception raised")
         raise
     except Exception as e:
+        print(f"💥 Unexpected error during registration: {e}")
+        print(f"💥 Error type: {type(e)}")
+        import traceback
+        print(f"💥 Traceback: {traceback.format_exc()}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
