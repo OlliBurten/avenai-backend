@@ -1435,10 +1435,13 @@ async def register(
     _: bool = Depends(rate_limit_dependency)
 ):
     """User registration endpoint with real database"""
+    print("🚨 REGISTRATION ENDPOINT CALLED - DEBUG LOGGING ACTIVE!")
+    print("🚨 ABOUT TO PARSE REQUEST BODY...")
     try:
         print("🔍 Starting registration process...")
         
         # Get JSON data
+        print("🚨 PARSING REQUEST BODY...")
         body = await request.json()
         print(f"📝 Received registration data: {body}")
         
