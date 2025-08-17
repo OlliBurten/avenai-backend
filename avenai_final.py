@@ -6256,6 +6256,7 @@ async def get_real_time_monitoring():
 
 if __name__ == "__main__":
     import uvicorn
+    import os
     
     print("🚀 Starting Avenai AI Platform - FINAL CLEAN VERSION...")
     print(f"📚 OpenAI Available: {OPENAI_AVAILABLE}")
@@ -6263,10 +6264,14 @@ if __name__ == "__main__":
     print("⚠️  IMPORTANT: This is the ONLY backend file that should be used!")
     print("⚠️  Remove all other Python files to avoid conflicts!")
     
+    # Get port from environment variable or default to 8000
+    port = int(os.getenv("PORT", 8000))
+    print(f"🌐 Starting server on port {port}")
+    
     uvicorn.run(
         "avenai_final:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=False,
         log_level="info"
     )
