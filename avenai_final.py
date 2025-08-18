@@ -10387,3 +10387,4 @@ async def get_production_dashboard(tenant_id: str):
         return dashboard
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+# FORCE RAILWAY REDEPLOY - AI CONTENT FIX
