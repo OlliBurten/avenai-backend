@@ -210,6 +210,7 @@ class UserProfile(BaseModel):
 # ============================================================================
 # ANALYTICS & MONITORING
 # ============================================================================
+# FORCE RAILWAY REDEPLOY - ChatSession model fix deployed
 
 # Analytics storage
 ANALYTICS_DATA = {
