@@ -1954,12 +1954,14 @@ async def list_documents(
         
         print(f"👤 User authenticated: {user.id}")
         
-        # Query documents from database
-        query = db.query(Document).filter(Document.company_id == user.id)
+        # Query documents from database - filter by user's company
+        query = db.query(Document).filter(Document.company_id == user.company_id)
         
         if company_id:
             query = query.filter(Document.company_id == company_id)
             print(f"🏢 Filtering documents for company: {company_id}")
+        
+        print(f"🔍 Query filter: company_id = {user.company_id}")
         
         # Get total count
         total_docs = query.count()
