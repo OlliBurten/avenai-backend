@@ -2108,37 +2108,132 @@ async def create_chat_session(
     company_id: str = Form(...),
     created_by: str = Form(...),
     document_ids: Optional[str] = Form(None),
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db),
     _: bool = Depends(rate_limit_dependency)
 ):
-    """Create chat session"""
-    session_id = create_id("session")
-    
-    # Sanitize inputs
-    sanitized_title = sanitize_input(title, 200)
-    sanitized_company_id = sanitize_input(company_id, 100)
-    sanitized_created_by = sanitize_input(created_by, 100)
-    
-    session = ChatSession(
-        id=session_id,
-        title=sanitized_title,
-        company_id=sanitized_company_id,
-        created_by=sanitized_created_by,
-        created_at=datetime.now().isoformat(),
-        updated_at=datetime.now().isoformat()
-    )
-    
-    MOCK_CHAT_SESSIONS[session_id] = session.dict()
-    return session
+    """Create chat session in database"""
+    try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify company_id matches user's company
+        if company_id != user.company_id:
+            raise HTTPException(status_code=403, detail="Access denied - company mismatch")
+        
+        session_id = create_id("session")
+        
+        # Sanitize inputs
+        sanitized_title = sanitize_input(title, 200)
+        sanitized_company_id = sanitize_input(company_id, 100)
+        sanitized_created_by = sanitize_input(created_by, 100)
+        
+        # Create session in database
+        now = datetime.now()
+        session = ChatSession(
+            id=session_id,
+            title=sanitized_title,
+            company_id=sanitized_company_id,
+            created_by=sanitized_created_by,
+            created_at=now,
+            updated_at=now
+        )
+        
+        db.add(session)
+        db.commit()
+        
+        print(f"✅ Chat session created: {session_id}")
+        
+        return {
+            "id": session.id,
+            "title": session.title,
+            "company_id": session.company_id,
+            "created_by": session.created_by,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "updated_at": session.updated_at.isoformat() if session.updated_at else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error creating chat session: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create chat session: {str(e)}")
 
 @app.get("/api/v1/ai-chat/sessions")
-async def get_chat_sessions(company_id: Optional[str] = None):
-    """Get chat sessions"""
-    sessions = list(MOCK_CHAT_SESSIONS.values())
-    
-    if company_id:
-        sessions = [s for s in sessions if s["company_id"] == company_id]
-    
-    return sessions
+async def get_chat_sessions(
+    company_id: Optional[str] = None,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
+):
+    """Get chat sessions from database"""
+    try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Use user's company_id if none provided
+        if not company_id:
+            company_id = user.company_id
+        
+        # Verify company_id matches user's company
+        if company_id != user.company_id:
+            raise HTTPException(status_code=403, detail="Access denied - company mismatch")
+        
+        # Query sessions from database
+        from sqlalchemy import text
+        sessions_query = text("""
+            SELECT id, title, company_id, created_by, created_at, updated_at
+            FROM chat_sessions 
+            WHERE company_id = :company_id
+            ORDER BY updated_at DESC
+        """)
+        
+        result = db.execute(sessions_query, {"company_id": company_id})
+        sessions = result.fetchall()
+        
+        # Transform to dict format
+        sessions_list = []
+        for row in sessions:
+            session_dict = {
+                "id": row[0],
+                "title": row[1],
+                "company_id": row[2],
+                "created_by": row[3],
+                "created_at": row[4].isoformat() if row[4] else None,
+                "updated_at": row[5].isoformat() if row[5] else None
+            }
+            sessions_list.append(session_dict)
+        
+        print(f"✅ Retrieved {len(sessions_list)} chat sessions for company {company_id}")
+        return sessions_list
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error retrieving chat sessions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve chat sessions: {str(e)}")
 
 @app.post("/api/v1/ai-chat/chat")
 async def send_chat_message(
@@ -2146,116 +2241,249 @@ async def send_chat_message(
     message: str = Form(...),
     session_id: str = Form(...),
     document_ids: Optional[str] = Form(None),
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db),
     _: bool = Depends(rate_limit_dependency)
 ):
-    """Send chat message and get AI response"""
-    if session_id not in MOCK_CHAT_SESSIONS:
-        raise HTTPException(status_code=404, detail="Session not found")
+    """Send chat message and get AI response from database"""
+    try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify session exists and belongs to user's company
+        from sqlalchemy import text
+        session_query = text("SELECT id, company_id FROM chat_sessions WHERE id = :session_id")
+        session_result = db.execute(session_query, {"session_id": session_id})
+        session_row = session_result.fetchone()
+        
+        if not session_row:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        if session_row[1] != user.company_id:
+            raise HTTPException(status_code=403, detail="Access denied - session not owned by user")
+        
+        # If no specific documents provided, use all available documents for the company
+        if not document_ids:
+            docs_query = text("SELECT id FROM documents WHERE company_id = :company_id")
+            docs_result = db.execute(docs_query, {"company_id": user.company_id})
+            company_docs = [row[0] for row in docs_result.fetchall()]
+            if company_docs:
+                document_ids = ",".join(company_docs)
+                print(f"📚 Auto-including {len(company_docs)} documents for company {user.company_id}")
+        
+        # Sanitize inputs
+        sanitized_message = sanitize_input(message, 5000)  # Allow longer messages for AI chat
+        sanitized_session_id = sanitize_input(session_id, 100)
+        sanitized_document_ids = sanitize_input(document_ids, 500) if document_ids else None
+        
+        # Create user message in database
+        user_msg_id = create_id("msg")
+        now = datetime.now()
+        user_message = ChatMessage(
+            id=user_msg_id,
+            session_id=sanitized_session_id,
+            content=sanitized_message,
+            role="user",
+            timestamp=now,
+            document_context=sanitized_document_ids
+        )
+        
+        db.add(user_message)
     
-    # If no specific documents provided, use all available documents for the company
-    if not document_ids:
-        session = MOCK_CHAT_SESSIONS[session_id]
-        company_id = session.get("company_id", "company_001")
-        # Get all documents for this company
-        company_docs = [doc_id for doc_id, doc in MOCK_DOCUMENTS.items() if doc.get("company_id") == company_id]
-        if company_docs:
-            document_ids = ",".join(company_docs)
-            print(f"📚 Auto-including {len(company_docs)} documents for company {company_id}")
-    
-    # Sanitize inputs
-    sanitized_message = sanitize_input(message, 5000)  # Allow longer messages for AI chat
-    sanitized_session_id = sanitize_input(session_id, 100)
-    sanitized_document_ids = sanitize_input(document_ids, 500) if document_ids else None
-    
-    # Create user message
-    user_msg_id = create_id("msg")
-    user_message = ChatMessage(
-        id=user_msg_id,
-        session_id=sanitized_session_id,
-        content=sanitized_message,
-        role="user",
-        timestamp=datetime.now().isoformat(),
-        document_context=sanitized_document_ids
-    )
-    MOCK_CHAT_MESSAGES[user_msg_id] = user_message.dict()
-    
-    # Get AI response with enhanced features
-    start_time = time.time()
-    ai_response = get_ai_response(message, document_ids, session_id, "gpt-4")
-    ai_response_time = time.time() - start_time
-    
-    # Create AI message
-    ai_msg_id = create_id("msg")
-    ai_message = ChatMessage(
-        id=ai_msg_id,
-        session_id=session_id,
-        content=ai_response,
-        role="assistant",
-        timestamp=datetime.now().isoformat(),
-        document_context=document_ids
-    )
-    MOCK_CHAT_MESSAGES[ai_msg_id] = ai_message.dict()
-    
-    # Update session
-    MOCK_CHAT_SESSIONS[session_id]["updated_at"] = datetime.now().isoformat()
-    
-    # Track AI usage
-    document_count = len(document_ids.split(',')) if document_ids else 0
-    track_ai_usage(
-        user_id="user_001",  # In production, get from auth
-        session_id=session_id,
-        message_count=2,  # User message + AI response
-        document_count=document_count,
-        response_time=ai_response_time,
-        model_used="gpt-4"
-    )
-    
-    # Track user activity
-    track_user_activity("user_001", "ai_chat_message", {
-        "session_id": session_id,
-        "message_count": 2,
-        "document_count": document_count,
-        "response_time": ai_response_time
-    })
-    
-    return ai_message
+        # Get AI response with enhanced features
+        start_time = time.time()
+        ai_response = get_ai_response(message, document_ids, session_id, "gpt-4")
+        ai_response_time = time.time() - start_time
+        
+        # Create AI message in database
+        ai_msg_id = create_id("msg")
+        ai_message = ChatMessage(
+            id=ai_msg_id,
+            session_id=session_id,
+            content=ai_response,
+            role="assistant",
+            timestamp=now,
+            document_context=document_ids
+        )
+        
+        db.add(ai_message)
+        
+        # Update session timestamp
+        update_query = text("UPDATE chat_sessions SET updated_at = :updated_at WHERE id = :session_id")
+        db.execute(update_query, {"updated_at": now, "session_id": session_id})
+        
+        # Commit all changes
+        db.commit()
+        
+        print(f"✅ Chat messages saved to database for session {session_id}")
+        
+        # Track AI usage
+        document_count = len(document_ids.split(',')) if document_ids else 0
+        track_ai_usage(
+            user_id=user_id,
+            session_id=session_id,
+            message_count=2,  # User message + AI response
+            document_count=document_count,
+            response_time=ai_response_time,
+            model_used="gpt-4"
+        )
+        
+        # Track user activity
+        track_user_activity(user_id, "ai_chat_message", {
+            "session_id": session_id,
+            "message_count": 2,
+            "document_count": document_count,
+            "response_time": ai_response_time
+        })
+        
+        return {
+            "id": ai_message.id,
+            "session_id": ai_message.session_id,
+            "content": ai_message.content,
+            "role": ai_message.role,
+            "timestamp": ai_message.timestamp.isoformat() if ai_message.timestamp else None,
+            "document_context": ai_message.document_context
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error sending chat message: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to send chat message: {str(e)}")
 
 @app.get("/api/v1/ai-chat/sessions/{session_id}/messages")
-async def get_chat_messages(session_id: str):
-    """Get chat messages for a session"""
-    if session_id not in MOCK_CHAT_SESSIONS:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    # Get all messages for this session
-    session_messages = [
-        msg for msg in MOCK_CHAT_MESSAGES.values() 
-        if msg["session_id"] == session_id
-    ]
-    
-    # Sort by timestamp
-    session_messages.sort(key=lambda x: x["timestamp"])
-    
-    return session_messages
+async def get_chat_messages(
+    session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
+):
+    """Get chat messages for a session from database"""
+    try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify session exists and belongs to user's company
+        from sqlalchemy import text
+        session_query = text("SELECT id, company_id FROM chat_sessions WHERE id = :session_id")
+        session_result = db.execute(session_query, {"session_id": session_id})
+        session_row = session_result.fetchone()
+        
+        if not session_row:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        if session_row[1] != user.company_id:
+            raise HTTPException(status_code=403, detail="Access denied - session not owned by user")
+        
+        # Get all messages for this session
+        messages_query = text("""
+            SELECT id, session_id, content, role, timestamp, document_context
+            FROM chat_messages 
+            WHERE session_id = :session_id
+            ORDER BY timestamp ASC
+        """)
+        
+        result = db.execute(messages_query, {"session_id": session_id})
+        messages = result.fetchall()
+        
+        # Transform to dict format
+        messages_list = []
+        for row in messages:
+            message_dict = {
+                "id": row[0],
+                "session_id": row[1],
+                "content": row[2],
+                "role": row[3],
+                "timestamp": row[4].isoformat() if row[4] else None,
+                "document_context": row[5]
+            }
+            messages_list.append(message_dict)
+        
+        print(f"✅ Retrieved {len(messages_list)} messages for session {session_id}")
+        return messages_list
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error retrieving chat messages: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve chat messages: {str(e)}")
 
 @app.delete("/api/v1/ai-chat/sessions/{session_id}")
-async def delete_chat_session(session_id: str):
-    """Delete a chat session and all its messages"""
-    if session_id not in MOCK_CHAT_SESSIONS:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    # Delete all messages for this session
-    message_ids_to_delete = [
-        msg_id for msg_id, msg in MOCK_CHAT_MESSAGES.items()
-        if msg["session_id"] == session_id
-    ]
-    
-    for msg_id in message_ids_to_delete:
-        del MOCK_CHAT_MESSAGES[msg_id]
-    
-    # Delete the session
-    del MOCK_CHAT_SESSIONS[session_id]
-    
-    return {"message": "Session deleted successfully"}
+async def delete_chat_session(
+    session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
+):
+    """Delete a chat session and all its messages from database"""
+    try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify session exists and belongs to user's company
+        from sqlalchemy import text
+        session_query = text("SELECT id, company_id FROM chat_sessions WHERE id = :session_id")
+        session_result = db.execute(session_query, {"session_id": session_id})
+        session_row = session_result.fetchone()
+        
+        if not session_row:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        if session_row[1] != user.company_id:
+            raise HTTPException(status_code=403, detail="Access denied - session not owned by user")
+        
+        # Delete all messages for this session
+        delete_messages_query = text("DELETE FROM chat_messages WHERE session_id = :session_id")
+        db.execute(delete_messages_query, {"session_id": session_id})
+        
+        # Delete the session
+        delete_session_query = text("DELETE FROM chat_sessions WHERE id = :session_id")
+        db.execute(delete_session_query, {"session_id": session_id})
+        
+        # Commit all changes
+        db.commit()
+        
+        print(f"✅ Chat session {session_id} and all messages deleted successfully")
+        return {"message": "Session deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error deleting chat session: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete chat session: {str(e)}")
 
 # ============================================================================
 # ENHANCED AI FEATURES - PHASE 1
