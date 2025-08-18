@@ -1896,7 +1896,6 @@ async def upload_document(
         content_text = process_document_content(file_content, file.filename)
         
         # Create document in database
-        from datetime import datetime
         now = datetime.now()
         
         document = Document(
