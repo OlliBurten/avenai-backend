@@ -398,13 +398,53 @@ def create_id(prefix: str) -> str:
     return f"{prefix}_{timestamp}_{unique_hash}"
 
 def process_document_content(content: bytes, filename: str) -> str:
-    """Process document content"""
+    """Process document content with PDF support"""
     try:
+        print(f"🔍 Processing document: {filename}")
+        
+        # Handle text files
         if filename.endswith(('.txt', '.md', '.json')):
+            print(f"📝 Processing text file: {filename}")
             return content.decode('utf-8')
+        
+        # Handle PDF files
+        elif filename.endswith('.pdf'):
+            print(f"📄 Processing PDF file: {filename}")
+            try:
+                # Try to extract text from PDF using PyPDF2
+                import PyPDF2
+                from io import BytesIO
+                
+                pdf_file = BytesIO(content)
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                
+                text_content = ""
+                for page_num, page in enumerate(pdf_reader.pages):
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
+                
+                if text_content.strip():
+                    print(f"✅ Successfully extracted {len(text_content)} characters from PDF")
+                    return text_content
+                else:
+                    print(f"⚠️  No text extracted from PDF, using fallback")
+                    return f"PDF Document: {filename} - Text extraction completed but no readable text found. This may be a scanned document or image-based PDF."
+                    
+            except ImportError:
+                print(f"⚠️  PyPDF2 not available, using fallback")
+                return f"PDF Document: {filename} - PDF text extraction requires PyPDF2 library. Content not extracted."
+            except Exception as e:
+                print(f"⚠️  PDF processing error: {e}")
+                return f"PDF Document: {filename} - Error extracting text: {str(e)}"
+        
+        # Handle other file types
         else:
-            return f"[Document: {filename}] - Content extraction not implemented yet"
+            print(f"❓ Unknown file type: {filename}")
+            return f"Document: {filename} - File type not supported for content extraction. Please upload .txt, .md, .json, or .pdf files."
+            
     except Exception as e:
+        print(f"❌ Error processing {filename}: {e}")
         return f"[Error processing {filename}: {str(e)}]"
 
 def read_document_content(doc_id: str) -> Optional[str]:
