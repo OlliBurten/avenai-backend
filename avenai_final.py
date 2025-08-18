@@ -1914,9 +1914,10 @@ async def upload_document(
         )
         
         # Save to database
+        print(f"💾 Adding document to database session...")
         db.add(document)
+        print(f"💾 Committing to database...")
         db.commit()
-        
         print(f"✅ Document saved to database with ID: {doc_id}")
         
         # Return document data
@@ -1937,6 +1938,18 @@ async def upload_document(
     except HTTPException:
         raise
     except Exception as e:
+        print(f"💥 Upload failed with error: {e}")
+        print(f"💥 Error type: {type(e)}")
+        import traceback
+        print(f"💥 Full traceback: {traceback.format_exc()}")
+        
+        # Rollback database transaction
+        try:
+            db.rollback()
+            print("💾 Database transaction rolled back")
+        except Exception as rollback_error:
+            print(f"💥 Rollback failed: {rollback_error}")
+        
         # Don't expose internal errors in production
         error_msg = "Upload failed" if os.getenv("DEBUG", "False").lower() == "true" else "Upload failed: Internal server error"
         raise HTTPException(status_code=500, detail=error_msg)
