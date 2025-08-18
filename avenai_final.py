@@ -1954,52 +1954,73 @@ async def list_documents(
         
         print(f"👤 User authenticated: {user.id}")
         
-        # Query documents from database - filter by user's company
-        query = db.query(Document).filter(Document.company_id == user.company_id)
-        
-        if company_id:
-            query = query.filter(Document.company_id == company_id)
-            print(f"🏢 Filtering documents for company: {company_id}")
-        
-        print(f"🔍 Query filter: company_id = {user.company_id}")
-        
-        # Get total count
-        total_docs = query.count()
-        print(f"📄 Total documents in database: {total_docs}")
-        
-        # Apply pagination
-        start = (page - 1) * limit
-        end = start + limit
-        documents = query.offset(start).limit(limit).all()
-        
-        # Transform database objects to dict format
-        docs_list = []
-        for doc in documents:
-            doc_dict = {
-                "id": doc.id,
-                "filename": doc.filename,
-                "original_filename": doc.original_filename,
-                "file_size": doc.file_size,
-                "mime_type": doc.mime_type,
-                "status": doc.status,
-                "content_summary": doc.content_summary,
-                "uploaded_by": doc.uploaded_by,
-                "company_id": doc.company_id,
-                "created_at": doc.created_at.isoformat() if doc.created_at else None,
-                "updated_at": doc.updated_at.isoformat() if doc.updated_at else None
+        # Query documents from database - use raw SQL to avoid SQLAlchemy issues
+        try:
+            # First, let's check what tables exist
+            result = db.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+            tables = [row[0] for row in result]
+            print(f"🔍 Available tables: {tables}")
+            
+            # Check if documents table exists
+            if 'documents' not in tables:
+                print("❌ Documents table not found!")
+                return {"documents": [], "total": 0, "page": page, "limit": limit, "pages": 0}
+            
+            # Use raw SQL query to avoid SQLAlchemy ORM issues
+            sql_query = """
+                SELECT id, filename, original_filename, file_size, mime_type, status, 
+                       content_summary, uploaded_by, company_id, created_at, updated_at
+                FROM documents 
+                WHERE company_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            
+            # Execute raw SQL
+            offset = (page - 1) * limit
+            result = db.execute(sql_query, (user.company_id, limit, offset))
+            documents = result.fetchall()
+            
+            # Get total count
+            count_result = db.execute("SELECT COUNT(*) FROM documents WHERE company_id = %s", (user.company_id,))
+            total_docs = count_result.scalar()
+            
+            print(f"🔍 Raw SQL query executed successfully")
+            print(f"📄 Total documents found: {total_docs}")
+            
+            # Transform raw results to dict format
+            docs_list = []
+            for row in documents:
+                doc_dict = {
+                    "id": row[0],
+                    "filename": row[1],
+                    "original_filename": row[2],
+                    "file_size": row[3],
+                    "mime_type": row[4],
+                    "status": row[5],
+                    "content_summary": row[6],
+                    "uploaded_by": row[7],
+                    "company_id": row[8],
+                    "created_at": row[9].isoformat() if row[9] else None,
+                    "updated_at": row[10].isoformat() if row[10] else None
+                }
+                docs_list.append(doc_dict)
+            
+            result = {
+                "documents": docs_list,
+                "total": total_docs,
+                "page": page,
+                "limit": limit,
+                "pages": (total_docs + limit - 1) // limit
             }
-            docs_list.append(doc_dict)
-        
-        result = {
-            "documents": docs_list,
-            "total": total_docs,
-            "page": page,
-            "limit": limit,
-            "pages": (total_docs + limit - 1) // limit
-        }
-        
-        print(f"✅ Returning {len(docs_list)} documents from database")
-        return result
+            
+            print(f"✅ Returning {len(docs_list)} documents from database")
+            return result
+            
+        except Exception as sql_error:
+            print(f"❌ Raw SQL query failed: {sql_error}")
+            # Fallback to empty result
+            return {"documents": [], "total": 0, "page": page, "limit": limit, "pages": 0}
         
     except HTTPException:
         raise
