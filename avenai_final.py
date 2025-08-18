@@ -1956,8 +1956,10 @@ async def list_documents(
         
         # Query documents from database - use raw SQL to avoid SQLAlchemy issues
         try:
+            from sqlalchemy import text
+            
             # First, let's check what tables exist
-            result = db.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+            result = db.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"))
             tables = [row[0] for row in result]
             print(f"🔍 Available tables: {tables}")
             
@@ -1967,22 +1969,22 @@ async def list_documents(
                 return {"documents": [], "total": 0, "page": page, "limit": limit, "pages": 0}
             
             # Use raw SQL query to avoid SQLAlchemy ORM issues
-            sql_query = """
+            sql_query = text("""
                 SELECT id, filename, original_filename, file_size, mime_type, status, 
                        content_summary, uploaded_by, company_id, created_at, updated_at
                 FROM documents 
-                WHERE company_id = %s
+                WHERE company_id = :company_id
                 ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-            """
+                LIMIT :limit OFFSET :offset
+            """)
             
-            # Execute raw SQL
+            # Execute raw SQL with named parameters
             offset = (page - 1) * limit
-            result = db.execute(sql_query, (user.company_id, limit, offset))
+            result = db.execute(sql_query, {"company_id": user.company_id, "limit": limit, "offset": offset})
             documents = result.fetchall()
             
             # Get total count
-            count_result = db.execute("SELECT COUNT(*) FROM documents WHERE company_id = %s", (user.company_id,))
+            count_result = db.execute(text("SELECT COUNT(*) FROM documents WHERE company_id = :company_id"), {"company_id": user.company_id})
             total_docs = count_result.scalar()
             
             print(f"🔍 Raw SQL query executed successfully")
