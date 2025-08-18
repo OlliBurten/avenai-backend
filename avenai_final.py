@@ -210,7 +210,7 @@ class UserProfile(BaseModel):
 # ============================================================================
 # ANALYTICS & MONITORING
 # ============================================================================
-# FORCE RAILWAY REDEPLOY - PDF extraction fix deployed - ChatSession model fix deployed - URGENT DEPLOY
+# FORCE RAILWAY REDEPLOY - PDF extraction fix deployed - ChatSession model fix deployed - URGENT DEPLOY - FINAL PUSH
 
 # Analytics storage
 ANALYTICS_DATA = {
