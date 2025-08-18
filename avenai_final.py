@@ -1968,6 +1968,15 @@ async def list_documents(
                 print("❌ Documents table not found!")
                 return {"documents": [], "total": 0, "page": page, "limit": limit, "pages": 0}
             
+            # Debug: Check what company_id we're filtering by
+            print(f"🔍 User company_id: {user.company_id}")
+            print(f"🔍 User id: {user.id}")
+            
+            # First, let's see ALL documents in the database to debug
+            all_docs_result = db.execute(text("SELECT id, company_id, original_filename FROM documents"))
+            all_docs = all_docs_result.fetchall()
+            print(f"🔍 All documents in database: {all_docs}")
+            
             # Use raw SQL query to avoid SQLAlchemy ORM issues
             sql_query = text("""
                 SELECT id, filename, original_filename, file_size, mime_type, status, 
@@ -2079,19 +2088,28 @@ async def delete_document(
         
         print(f"🗑️ User {user.id} attempting to delete document {document_id}")
         
-        # Find document in database
-        document = db.query(Document).filter(Document.id == document_id).first()
-        if not document:
+        # Find document in database using raw SQL
+        from sqlalchemy import text
+        
+        doc_query = text("SELECT id, company_id, original_filename FROM documents WHERE id = :document_id")
+        doc_result = db.execute(doc_query, {"document_id": document_id})
+        document_row = doc_result.fetchone()
+        
+        if not document_row:
             raise HTTPException(status_code=404, detail="Document not found")
         
+        doc_company_id = document_row[1]
+        print(f"🔍 Document company_id: {doc_company_id}, User company_id: {user.company_id}")
+        
         # Check if user owns this document (company_id match)
-        if document.company_id != user.id:
+        if doc_company_id != user.company_id:
             raise HTTPException(status_code=403, detail="Access denied - document not owned by user")
         
         print(f"✅ Document {document_id} found and owned by user {user.id}")
         
-        # Delete the document
-        db.delete(document)
+        # Delete the document using raw SQL
+        delete_query = text("DELETE FROM documents WHERE id = :document_id")
+        db.execute(delete_query, {"document_id": document_id})
         db.commit()
         
         print(f"🗑️ Document {document_id} deleted successfully from database")
