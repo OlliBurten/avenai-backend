@@ -55,15 +55,15 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
     
     id = Column(String, primary_key=True, default=lambda: f"chat_{uuid.uuid4().hex[:8]}")
+    title = Column(String(200), nullable=False)
     company_id = Column(String, ForeignKey("companies.id"), nullable=False)
-    user_id = Column(String, ForeignKey("users.id"), nullable=True)  # Null for anonymous users
-    session_token = Column(String(255), unique=True, nullable=False, index=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_activity = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
     company = relationship("Company")
-    user = relationship("User")
+    created_by_user = relationship("User")
     messages = relationship("ChatMessage", back_populates="session")
 
 class ChatMessage(Base):
@@ -71,9 +71,10 @@ class ChatMessage(Base):
     
     id = Column(String, primary_key=True, default=lambda: f"msg_{uuid.uuid4().hex[:8]}")
     session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False)
-    message_type = Column(String(20), nullable=False)  # user, ai
+    role = Column(String(20), nullable=False)  # user, assistant
     content = Column(Text, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    document_context = Column(Text)
     
     # Relationships
     session = relationship("ChatSession", back_populates="messages")
