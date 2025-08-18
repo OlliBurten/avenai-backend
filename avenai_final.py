@@ -201,80 +201,11 @@ class UserProfile(BaseModel):
             raise ValueError('Invalid role')
         return v
 
-class Document(BaseModel):
-    id: str
-    filename: str
-    original_filename: str
-    file_size: int
-    mime_type: str
-    status: str
-    content_summary: Optional[str] = None
-    uploaded_by: str
-    company_id: str
-    created_at: str
-    updated_at: str
-    
-    @field_validator('file_size')
-    @classmethod
-    def validate_file_size(cls, v):
-        if v > SECURITY_CONFIG["max_file_size"]:
-            raise ValueError('File size exceeds limit')
-        return v
-    
-    @field_validator('status')
-    @classmethod
-    def validate_status(cls, v):
-        allowed_statuses = ['processing', 'completed', 'failed']
-        if v not in allowed_statuses:
-            raise ValueError('Invalid status')
-        return v
+# Document model is now handled by SQLAlchemy in models.py
+# Removed conflicting Pydantic Document class
 
-class ChatSession(BaseModel):
-    id: str
-    title: str
-    company_id: str
-    created_by: str
-    created_at: str
-    updated_at: str
-    status: str = "active"
-    
-    @field_validator('title')
-    @classmethod
-    def validate_title(cls, v):
-        if len(v) > 200:
-            raise ValueError('Title too long')
-        return sanitize_input(v, 200)
-    
-    @field_validator('status')
-    @classmethod
-    def validate_status(cls, v):
-        allowed_statuses = ['active', 'archived', 'deleted']
-        if v not in allowed_statuses:
-            raise ValueError('Invalid status')
-        return v
-
-class ChatMessage(BaseModel):
-    id: str
-    session_id: str
-    content: str
-    role: str
-    timestamp: str
-    document_context: Optional[str] = None
-    
-    @field_validator('content')
-    @classmethod
-    def validate_content(cls, v):
-        if len(v) > SECURITY_CONFIG["content_max_length"]:
-            raise ValueError('Message content too long')
-        return sanitize_input(v, SECURITY_CONFIG["content_max_length"])
-    
-    @field_validator('role')
-    @classmethod
-    def validate_role(cls, v):
-        allowed_roles = ['user', 'assistant']
-        if v not in allowed_roles:
-            raise ValueError('Invalid role')
-        return v
+# ChatSession and ChatMessage models are now handled by SQLAlchemy in models.py
+# Removed conflicting Pydantic classes
 
 # ============================================================================
 # ANALYTICS & MONITORING
