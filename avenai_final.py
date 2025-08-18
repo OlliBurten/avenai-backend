@@ -1416,6 +1416,7 @@ async def login(
             "user": {
                 "id": user.id,
                 "email": user.email,
+                "company_id": user.company_id,  # Add company_id for document uploads
                 "company_name": company.name if company else "Unknown Company",
                 "company_description": company.description if company else "",
                 "created_at": user.created_at.isoformat(),
@@ -1528,6 +1529,7 @@ async def register(
             "user": {
                 "id": user.id,
                 "email": user.email,
+                "company_id": user.company_id,  # Add company_id for document uploads
                 "company_name": company.name,
                 "company_description": company.description,
                 "created_at": user.created_at.isoformat(),
@@ -1575,6 +1577,7 @@ async def get_current_user_route(
             "user": {
                 "id": user.id,
                 "email": user.email,
+                "company_id": user.company_id,  # Add company_id for document uploads
                 "company_name": company.name if company else "Unknown Company",
                 "company_description": company.description if company else "",
                 "created_at": user.created_at.isoformat(),
