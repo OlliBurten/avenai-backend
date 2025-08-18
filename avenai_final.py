@@ -1930,33 +1930,80 @@ async def list_documents_frontend():
 async def list_documents(
     page: int = 1,
     limit: int = 100,
-    company_id: Optional[str] = None
+    company_id: Optional[str] = None,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
 ):
-    """List documents"""
+    """List documents from database"""
     print(f"🔍 Listing documents - page: {page}, limit: {limit}, company_id: {company_id}")
-    print(f"📚 MOCK_DOCUMENTS keys: {list(MOCK_DOCUMENTS.keys())}")
     
-    docs = list(MOCK_DOCUMENTS.values())
-    print(f"📄 Total documents found: {len(docs)}")
-    
-    if company_id:
-        docs = [doc for doc in docs if doc.get("company_id") == company_id]
-        print(f"🏢 Documents for company {company_id}: {len(docs)}")
-    
-    start = (page - 1) * limit
-    end = start + limit
-    paginated_docs = docs[start:end]
-    
-    result = {
-        "documents": paginated_docs,
-        "total": len(docs),
-        "page": page,
-        "limit": limit,
-        "pages": (len(docs) + limit - 1) // limit
-    }
-    
-    print(f"✅ Returning {len(paginated_docs)} documents")
-    return result
+    try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user and company info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        print(f"👤 User authenticated: {user.id}")
+        
+        # Query documents from database
+        query = db.query(Document).filter(Document.company_id == user.id)
+        
+        if company_id:
+            query = query.filter(Document.company_id == company_id)
+            print(f"🏢 Filtering documents for company: {company_id}")
+        
+        # Get total count
+        total_docs = query.count()
+        print(f"📄 Total documents in database: {total_docs}")
+        
+        # Apply pagination
+        start = (page - 1) * limit
+        end = start + limit
+        documents = query.offset(start).limit(limit).all()
+        
+        # Transform database objects to dict format
+        docs_list = []
+        for doc in documents:
+            doc_dict = {
+                "id": doc.id,
+                "filename": doc.filename,
+                "original_filename": doc.original_filename,
+                "file_size": doc.file_size,
+                "mime_type": doc.mime_type,
+                "status": doc.status,
+                "content_summary": doc.content_summary,
+                "uploaded_by": doc.uploaded_by,
+                "company_id": doc.company_id,
+                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                "updated_at": doc.updated_at.isoformat() if doc.updated_at else None
+            }
+            docs_list.append(doc_dict)
+        
+        result = {
+            "documents": docs_list,
+            "total": total_docs,
+            "page": page,
+            "limit": limit,
+            "pages": (total_docs + limit - 1) // limit
+        }
+        
+        print(f"✅ Returning {len(docs_list)} documents from database")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error listing documents: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
 
 @app.delete("/api/documents/{document_id}")
 async def delete_document_frontend(document_id: str):
@@ -1984,15 +2031,54 @@ async def delete_document_frontend(document_id: str):
         raise HTTPException(status_code=500, detail="Failed to delete document")
 
 @app.delete("/api/v1/documents/{document_id}")
-async def delete_document(document_id: str):
-    """Delete a document"""
-    if document_id not in MOCK_DOCUMENTS:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    # Remove the document
-    del MOCK_DOCUMENTS[document_id]
-    
-    return {"message": "Document deleted successfully"}
+async def delete_document(
+    document_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
+):
+    """Delete a document from database"""
+    try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        print(f"🗑️ User {user.id} attempting to delete document {document_id}")
+        
+        # Find document in database
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Check if user owns this document (company_id match)
+        if document.company_id != user.id:
+            raise HTTPException(status_code=403, detail="Access denied - document not owned by user")
+        
+        print(f"✅ Document {document_id} found and owned by user {user.id}")
+        
+        # Delete the document
+        db.delete(document)
+        db.commit()
+        
+        print(f"🗑️ Document {document_id} deleted successfully from database")
+        
+        return {"message": "Document deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error deleting document: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
 
 @app.post("/api/v1/ai-chat/sessions")
 async def create_chat_session(
