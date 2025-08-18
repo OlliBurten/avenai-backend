@@ -407,23 +407,33 @@ def process_document_content(content: bytes, filename: str) -> str:
         return f"[Error processing {filename}: {str(e)}]"
 
 def read_document_content(doc_id: str) -> Optional[str]:
-    """Read document content from MOCK_DOCUMENTS"""
+    """Read document content from database"""
     try:
         print(f"🔍 Reading document content for ID: {doc_id}")
         
-        # Get content from MOCK_DOCUMENTS
-        if doc_id in MOCK_DOCUMENTS:
-            doc = MOCK_DOCUMENTS[doc_id]
-            print(f"📄 Found document: {doc.get('original_filename', 'Unknown')}")
+        # Import database session
+        from database import get_db
+        from models import Document
+        
+        # Get database session
+        db = next(get_db())
+        
+        # Query document from database
+        document = db.query(Document).filter(Document.id == doc_id).first()
+        
+        if document:
+            print(f"📄 Found document: {document.original_filename}")
             
-            if 'content_summary' in doc and doc['content_summary']:
+            # Check if document has processed content
+            if document.content_summary:
                 print(f"✅ Using content_summary for document {doc_id}")
-                return doc['content_summary']
+                return document.content_summary
             else:
                 print(f"⚠️  No content_summary found for document {doc_id}")
-                return None
+                # For now, return a basic description until we implement content processing
+                return f"API Documentation: {document.original_filename} (Status: {document.status})"
         else:
-            print(f"⚠️  Document {doc_id} not found in MOCK_DOCUMENTS")
+            print(f"⚠️  Document {doc_id} not found in database")
             return None
             
     except Exception as e:
