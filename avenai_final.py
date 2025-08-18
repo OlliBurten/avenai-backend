@@ -1854,24 +1854,47 @@ async def get_documents(
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
-    company_id: str = Form("company_001"),
-    uploaded_by: str = Form("user_001"),
+    company_id: str = Form(...),
+    uploaded_by: str = Form(...),
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db),
     _: bool = Depends(rate_limit_dependency)
 ):
-    """Upload document"""
+    """Upload document to database"""
     try:
+        # Verify JWT token and get user
+        token_data = verify_token(credentials.credentials)
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_id = token_data.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user info
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        print(f"📤 User {user.id} uploading document: {file.filename}")
+        print(f"🔍 Upload company_id: {company_id}, User company_id: {user.company_id}")
+        
+        # Verify company_id matches user's company
+        if company_id != user.company_id:
+            print(f"⚠️ Company ID mismatch: {company_id} vs {user.company_id}")
+            company_id = user.company_id  # Use user's actual company_id
+        
         file_content = await file.read()
         doc_id = create_id("doc")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_filename = f"{timestamp}_{file.filename.replace(' ', '_')}"
-        file_path = UPLOADS_DIR / safe_filename
-        
-        # Save file
-        with open(file_path, "wb") as f:
-            f.write(file_content)
         
         # Process content
         content_text = process_document_content(file_content, file.filename)
+        
+        # Create document in database
+        from datetime import datetime
+        now = datetime.now()
         
         document = Document(
             id=doc_id,
@@ -1883,21 +1906,30 @@ async def upload_document(
             content_summary=content_text[:200] + "..." if len(content_text) > 200 else content_text,
             uploaded_by=uploaded_by,
             company_id=company_id,
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat()
+            created_at=now,
+            updated_at=now
         )
         
-        MOCK_DOCUMENTS[doc_id] = document.dict()
+        # Save to database
+        db.add(document)
+        db.commit()
         
-        # Track document upload
-        track_document_usage(doc_id, "upload", uploaded_by)
-        track_user_activity(uploaded_by, "document_upload", {
-            "document_id": doc_id,
-            "filename": file.filename,
-            "file_size": len(file_content)
-        })
+        print(f"✅ Document saved to database with ID: {doc_id}")
         
-        return document
+        # Return document data
+        return {
+            "id": document.id,
+            "filename": document.filename,
+            "original_filename": document.original_filename,
+            "file_size": document.file_size,
+            "mime_type": document.mime_type,
+            "status": document.status,
+            "content_summary": document.content_summary,
+            "uploaded_by": document.uploaded_by,
+            "company_id": document.company_id,
+            "created_at": document.created_at.isoformat() if document.created_at else None,
+            "updated_at": document.updated_at.isoformat() if document.updated_at else None
+        }
         
     except HTTPException:
         raise
