@@ -4,7 +4,10 @@ from sqlalchemy.orm import sessionmaker
 import os
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/avenai")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required!")
+print(f"🔗 Connecting to database: {DATABASE_URL[:50]}...")
 
 # Create SQLAlchemy engine
 engine = create_engine(DATABASE_URL)
