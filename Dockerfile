@@ -40,6 +40,8 @@ COPY avenai_final.py .
 COPY database.py .
 COPY models.py .
 COPY auth_utils.py .
+COPY fix_database_schema.py .
+COPY startup.py .
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/uploads
@@ -52,4 +54,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
 
 # Run the application
-CMD ["python", "avenai_final.py"]
+CMD ["python", "startup.py"]
