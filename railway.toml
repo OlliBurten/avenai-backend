@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "python avenai_final.py"
+startCommand = "python simple_avenai.py"
