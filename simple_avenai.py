@@ -254,3 +254,4 @@ if __name__ == "__main__":
         port=int(os.getenv("PORT", 8000)),
         reload=True
     )
+# FORCE RAILWAY TO USE NEW CONFIG - Tue Aug 19 10:18:42 CEST 2025
